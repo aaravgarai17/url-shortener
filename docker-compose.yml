@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-shortener}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shortener}
+      POSTGRES_DB: ${POSTGRES_DB:-shortener}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shortener}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  cache:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-shortener}@db:5432/${POSTGRES_DB:-shortener}
+      REDIS_URL: redis://cache:6379/0
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-20}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+
+volumes:
+  pgdata:
