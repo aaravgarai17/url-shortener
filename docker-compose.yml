@@ -21,21 +21,57 @@ services:
       timeout: 3s
       retries: 5
 
+  # No published port: replicas are reached only through the load balancer.
+  # This is what allows `--scale api=3` — a host port binding would collide.
   api:
     build: .
-    ports:
-      - "8000:8000"
     environment:
-      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-shortener}:${POSTGRES_PASSWORD:-shortener}@db:5432/${POSTGRES_DB:-shortener}
       REDIS_URL: redis://cache:6379/0
-      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-20}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100000}
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
     depends_on:
       db:
         condition: service_healthy
       cache:
         condition: service_healthy
+    deploy:
+      replicas: 3
+
+  lb:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./infra/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./infra/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./infra/grafana/url-shortener-dashboard.json:/etc/grafana/provisioning/dashboards/url-shortener-dashboard.json:ro
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:

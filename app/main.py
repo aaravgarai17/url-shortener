@@ -4,9 +4,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app import base62, cache
+from app import base62, cache, metrics
 from app.config import settings
 from app.database import Base, engine, get_db
+from app.metrics import MetricsMiddleware, metrics_endpoint
 from app.models import URL
 from app.rate_limiter import is_allowed
 from app.schemas import ShortenRequest, ShortenResponse, StatsResponse
@@ -26,6 +27,14 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics_route():
+    """Prometheus scrape endpoint."""
+    return metrics_endpoint()
 
 
 def rate_limit(request: Request) -> None:
@@ -90,11 +99,14 @@ def redirect(short_code: str, db: Session = Depends(get_db)):
     long_url = cache.get_long_url(short_code)
 
     if long_url is None:
+        metrics.record_cache_miss()
         url = db.query(URL).filter(URL.short_code == short_code).first()
         if url is None:
             raise HTTPException(status_code=404, detail="Short code not found")
         long_url = url.long_url
         cache.set_long_url(short_code, long_url)
+    else:
+        metrics.record_cache_hit()
 
     # Increment analytics without a full ORM load.
     db.query(URL).filter(URL.short_code == short_code).update(
@@ -102,4 +114,5 @@ def redirect(short_code: str, db: Session = Depends(get_db)):
     )
     db.commit()
 
+    metrics.record_redirect()
     return RedirectResponse(url=long_url, status_code=301)

@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: url-shortener
+    # Resolve the "api" service name to every replica's IP so each container is
+    # scraped individually. This is what makes per-instance panels possible —
+    # scraping through the load balancer would blend all replicas together and
+    # hide exactly the behavior we want to demonstrate.
+    dns_sd_configs:
+      - names: ["api"]
+        type: A
+        port: 8000
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: service
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
