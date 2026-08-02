@@ -86,10 +86,14 @@ Interactive docs are auto-generated at `/docs` (Swagger UI).
 
 ## Running locally
 
+**Requires:** Docker Desktop. Optionally [k6](https://k6.io/) for the load test.
+
 ```bash
 cp .env.example .env
-docker compose up --build --scale api=3
+docker compose up --build
 ```
+
+Starts 3 API replicas plus Postgres, Redis, nginx, Prometheus, and Grafana.
 
 | Service           | URL                     |
 | ----------------- | ----------------------- |
