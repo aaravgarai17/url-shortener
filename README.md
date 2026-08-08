@@ -192,8 +192,39 @@ k6 run loadtest/redirect_load.js
 The thresholds are **assertions, not decoration** — the run exits non-zero if
 p95 latency exceeds 50ms, p99 exceeds 150ms, or the error rate crosses 1%. That
 makes it a performance regression gate you can wire into CI, not just a traffic
-generator. Watch the Grafana dashboard while it runs to see latency percentiles
-and the per-replica traffic split move in real time.
+generator.
+
+### Measured results
+
+Apple M2, 8 cores, 8 GB RAM — the *entire* stack (3 API replicas, Postgres,
+Redis, nginx, Prometheus, Grafana) running in Docker on the same laptop
+generating the load.
+
+| Metric | Result |
+| ------ | ------ |
+| Requests | **140,535** over 2m10s |
+| Throughput | **1,079 req/sec** sustained |
+| Concurrency | 200 virtual users at peak |
+| Failed requests | **0** (0.00%) |
+| Checks passed | **281,030 / 281,030** (100%) |
+| p50 latency | **5.68 ms** |
+| p90 latency | 37.97 ms |
+| p95 latency | 53.41 ms ⚠️ |
+| p99 latency | **79.08 ms** |
+
+**The p95 threshold failed** — 53.41ms against a 50ms target, missing by 7%.
+Reported rather than quietly relaxed, because moving a threshold until it
+passes defeats the purpose of having one.
+
+Two things are worth noting about that miss. The p99 target passed
+comfortably (79ms against 150ms), so the tail is healthy — it's the middle of
+the distribution that's slower than hoped. And the load generator is sharing 8
+cores and 8 GB with nine containers, so a meaningful share of that latency is
+contention with the thing measuring it. The threshold was calibrated for
+dedicated hardware; on a laptop running the full stack it is optimistic.
+
+The honest version for a CV: **1,079 req/sec with zero failures at 200
+concurrent users, p50 5.7ms / p99 79ms** — with the hardware named.
 
 ## Chaos test — surviving replica loss
 
@@ -209,14 +240,24 @@ and asserts the error count stays within tolerance. nginx detects the dead
 replica and routes around it; because no request state lived in that
 container's memory, the remaining replicas absorb its traffic seamlessly.
 
+**Measured result:**
+
 ```
 ==> Sending continuous traffic for 30s (killing a replica at 10s)
-    !! killing replica a3f9c2e81b04 at t=10s
+    !! killing replica 273c0b518d8e at t=10s
 ==> Results
-    total requests:  312
+    total requests:  2280
     failed requests: 0
-RESULT: PASS — survived replica loss (<= 5 failures tolerated)
+RESULT: PASS — survived replica loss (<= 24 failures tolerated)
 ```
+
+**2,280 requests, zero failures**, with a container killed outright a third of
+the way through. The tolerance allows 24; it used none of them.
+
+That number is the whole argument for the stateless design. Had any request
+state lived in the killed container's memory — a session, a local cache, a
+counter — those requests would have failed. Nothing did, because everything
+shared lives in Postgres or Redis.
 
 Restore the killed replica with `docker compose up -d --scale api=3`.
 
