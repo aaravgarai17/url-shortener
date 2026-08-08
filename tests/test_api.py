@@ -43,9 +43,22 @@ def test_invalid_url_rejected(client):
     assert client.post("/api/shorten", json={"long_url": "not-a-url"}).status_code == 422
 
 
-def test_rate_limit_returns_429(client):
-    # Default limit is 20/min in tests; the 21st request should be rejected.
-    last = None
-    for _ in range(25):
-        last = client.post("/api/shorten", json={"long_url": "https://example.com"})
-    assert last.status_code == 429
+def test_rate_limit_returns_429(client, monkeypatch):
+    """Requests past the configured limit are rejected with 429.
+
+    The limit is set explicitly here rather than relying on the default: a
+    developer with a local .env (which pydantic-settings loads automatically)
+    would otherwise inherit their own value and see this test fail for reasons
+    that have nothing to do with the code.
+    """
+    from app import rate_limiter
+
+    monkeypatch.setattr(rate_limiter.settings, "rate_limit_requests", 5)
+
+    statuses = [
+        client.post("/api/shorten", json={"long_url": "https://example.com"}).status_code
+        for _ in range(8)
+    ]
+
+    assert statuses[:5] == [201] * 5, "first 5 should be allowed"
+    assert statuses[5:] == [429] * 3, "requests past the limit should be rejected"

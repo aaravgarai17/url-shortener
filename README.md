@@ -1,5 +1,10 @@
 # URL Shortener
 
+[![CI](https://github.com/aaravgarai17/url-shortener/actions/workflows/ci.yml/badge.svg)](https://github.com/aaravgarai17/url-shortener/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-94%25-brightgreen)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 A TinyURL/Bitly-style link shortening service built to demonstrate core system
 design concepts: **base62 key generation**, a **cache-aside read path**, and a
 **distributed sliding-window rate limiter** — deployed as **3 horizontally
@@ -83,6 +88,36 @@ runs in a Redis pipeline for atomicity under concurrency.
 | GET    | `/health`                | Liveness probe                       |
 
 Interactive docs are auto-generated at `/docs` (Swagger UI).
+
+## Verify it works (one command)
+
+Don't take the README's word for anything — run this:
+
+```bash
+./verify.sh
+```
+
+It boots the full stack, then checks every claim below independently: that
+shorten/redirect work, that unknown codes 404, that traffic is genuinely spread
+across multiple replicas, and that the cache records both hits and misses. Tears
+everything down when finished.
+
+```
+ ✓ test suite passed
+ ✓ service is healthy behind the load balancer
+ ✓ 3 API replicas running
+ ✓ created short code: 1
+ ✓ redirect returns 301
+ ✓ redirect points at the original URL
+ ✓ unknown code returns 404
+ ✓ traffic served by 3 distinct replicas
+ ✓ cache hits recorded
+ ✓ cache misses recorded
+ ✓ long URL is cached in Redis (url:1)
+
+ Results: 11 passed, 0 failed
+VERIFIED — every README claim checks out.
+```
 
 ## Running locally
 
